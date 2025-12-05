@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HW08-1132932</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <main class="container">
+        <h1>NEON <span class="text-x">X</span><span class="text-o">O</span></h1>
+        
+        <div class="status-bar">
+            <div class="player-card" id="card-x">
+                <span class="label">PLAYER X</span>
+                <span class="score" id="score-x">0</span>
+            </div>
+            <div class="player-card" id="card-o">
+                <span class="label">PLAYER O</span>
+                <span class="score" id="score-o">0</span>
+            </div>
+            <div class="player-card" id="card-draw">
+                <span class="label">DRAW</span>
+                <span class="score" id="score-draw">0</span>
+            </div>
+        </div>
+
+        <div class="game-area">
+            <span id="state" class="state-msg">準備開始</span>
+            
+            <section id="board" class="board" aria-label="井字棋棋盤">
+                <div id="strike" class="strike"></div>
+                
+                <button class="cell" data-idx="0"></button>
+                <button class="cell" data-idx="1"></button>
+                <button class="cell" data-idx="2"></button>
+                <button class="cell" data-idx="3"></button>
+                <button class="cell" data-idx="4"></button>
+                <button class="cell" data-idx="5"></button>
+                <button class="cell" data-idx="6"></button>
+                <button class="cell" data-idx="7"></button>
+                <button class="cell" data-idx="8"></button>
+            </section>
+        </div>
+
+        <div class="controls">
+            <button id="reset" class="btn">重開一局</button>
+            <button id="reset-all" class="btn btn-outline">重置計分</button>
+        </div>
+    </main>
+    <script src="script.js" defer></script>
+</body>
+</html>
