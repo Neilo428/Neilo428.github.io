@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe AI | 終極圈叉棋</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- CSS 樣式區域 --- */
+        :root {
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --card-bg: #ffffff;
+            --text-color: #333;
+            --board-border-color: #333; /* 深色背景作為格線 */
+            --cell-bg: #fff;
+            --x-color: #0984e3;
+            --o-color: #d63031;
+            --win-bg: #55efc4;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: var(--bg-gradient);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--text-color);
+        }
+
+        .game-card {
+            background: var(--card-bg);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+            text-align: center;
+            width: 90%;
+            max-width: 450px;
+        }
+
+        h1 {
+            margin-bottom: 0.5rem;
+            font-size: 2rem;
+        }
+
+        p.subtitle {
+            color: #666;
+            margin-bottom: 1.5rem;
+        }
+
+        #status {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            height: 1.5rem; /* 固定高度防止跳動 */
+            color: #2d3436;
+        }
+
+        /* --- 棋盤核心樣式 --- */
+        .board-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .board {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 10px; /* 格子之間的間距，這裡會透出背景色形成線條 */
+            background-color: var(--board-border-color); /* 這是格線的顏色 */
+            
+            /* 強制設定大小，確保一定看得到 */
+            width: 300px;
+            height: 300px;
+            border: 10px solid var(--board-border-color);
+            border-radius: 10px;
+        }
+
+        .cell {
+            background-color: var(--cell-bg); /* 格子顏色 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 3rem;
+            font-weight: bold;
+            cursor: pointer;
+            user-select: none;
+            
+            /* 確保格子佔滿空間 */
+            width: 100%;
+            height: 100%;
+        }
+
+        .cell:hover:not(.x):not(.o) {
+            background-color: #f0f0f0;
+        }
+
+        .cell.x { color: var(--x-color); cursor: default; }
+        .cell.o { color: var(--o-color); cursor: default; }
+
+        /* 勝利時的高亮樣式 */
+        .cell.win {
+            background-color: var(--win-bg);
+            color: white;
+            transition: background-color 0.3s;
+        }
+
+        button {
+            padding: 12px 30px;
+            font-size: 1rem;
+            background: linear-gradient(to right, #0984e3, #74b9ff);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(9, 132, 227, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(9, 132, 227, 0.4);
+        }
+
+        /* 手機版適配 */
+        @media (max-width: 400px) {
+            .board {
+                width: 250px;
+                height: 250px;
+            }
+            .cell {
+                font-size: 2.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-card">
+        <h1>Tic Tac Toe</h1>
+        <p class="subtitle">人類 (X) vs 無敵電腦 (O)</p>
+        
+        <div id="status">輪到你了</div>
+
+        <div class="board-container">
+            <div class="board" id="board">
+                <div class="cell" data-index="0"></div>
+                <div class="cell" data-index="1"></div>
+                <div class="cell" data-index="2"></div>
+                <div class="cell" data-index="3"></div>
+                <div class="cell" data-index="4"></div>
+                <div class="cell" data-index="5"></div>
+                <div class="cell" data-index="6"></div>
+                <div class="cell" data-index="7"></div>
+                <div class="cell" data-index="8"></div>
+            </div>
+        </div>
+
+        <button id="restartBtn">重新開始</button>
+    </div>
+
+    <script>
+        /* --- JavaScript 邏輯區域 --- */
+        const statusDisplay = document.getElementById('status');
+        const cells = document.querySelectorAll('.cell');
+        const restartBtn = document.getElementById('restartBtn');
+
+        let board = Array(9).fill('');
+        let gameActive = true;
+        const HU_PLAYER = 'X';
+        const AI_PLAYER = 'O';
+
+        const winningConditions = [
+            [0, 1, 2], [3, 4, 5], [6, 7, 8],
+            [0, 3, 6], [1, 4, 7], [2, 5, 8],
+            [0, 4, 8], [2, 4, 6]
+        ];
+
+        cells.forEach(cell => cell.addEventListener('click', handleCellClick));
+        restartBtn.addEventListener('click', restartGame);
+
+        function handleCellClick(event) {
+            const clickedCell = event.target;
+            const clickedCellIndex = parseInt(clickedCell.getAttribute('data-index'));
+
+            if (board[clickedCellIndex] !== '' || !gameActive) return;
+
+            makeMove(clickedCellIndex, HU_PLAYER);
+            
+            if (checkGameEnd()) return;
+
+            gameActive = false;
+            statusDisplay.innerText = "電腦思考中...";
+            
+            setTimeout(() => {
+                // Minimax 演算法決定電腦下哪一步
+                const bestMove = minimax(board, AI_PLAYER).index;
+                makeMove(bestMove, AI_PLAYER);
+                checkGameEnd();
+                if (gameActive) {
+                    statusDisplay.innerText = "輪到你了";
+                    gameActive = true;
+                }
+            }, 300);
+        }
+
+        function makeMove(index, player) {
+            board[index] = player;
+            const cell = cells[index];
+            cell.classList.add(player.toLowerCase());
+            cell.innerText = player;
+        }
+
+        function checkGameEnd() {
+            let roundWon = false;
+            let winCombo = [];
+
+            for (let i = 0; i < winningConditions.length; i++) {
+                const [a, b, c] = winningConditions[i];
+                if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+                    roundWon = true;
+                    winCombo = [a, b, c];
+                    break;
+                }
+            }
+
+            if (roundWon) {
+                gameActive = false;
+                highlightWin(winCombo);
+                const winner = board[winCombo[0]];
+                statusDisplay.innerText = winner === HU_PLAYER ? "你贏了！" : "電腦獲勝！";
+                return true;
+            }
+
+            if (!board.includes('')) {
+                statusDisplay.innerText = "平局！";
+                gameActive = false;
+                return true;
+            }
+
+            return false;
+        }
+
+        function highlightWin(combo) {
+            combo.forEach(index => {
+                cells[index].classList.add('win');
+            });
+        }
+
+        function restartGame() {
+            gameActive = true;
+            board = Array(9).fill('');
+            statusDisplay.innerText = "輪到你了";
+            cells.forEach(cell => {
+                cell.innerText = '';
+                cell.className = 'cell';
+            });
+        }
+
+        // --- Minimax 核心演算法 ---
+        function minimax(newBoard, player) {
+            const availSpots = newBoard.map((val, idx) => val === '' ? idx : null).filter(val => val !== null);
+
+            if (checkWin(newBoard, HU_PLAYER)) return { score: -10 };
+            if (checkWin(newBoard, AI_PLAYER)) return { score: 10 };
+            if (availSpots.length === 0) return { score: 0 };
+
+            const moves = [];
+
+            for (let i = 0; i < availSpots.length; i++) {
+                const move = {};
+                move.index = availSpots[i];
+                newBoard[availSpots[i]] = player;
+
+                if (player === AI_PLAYER) {
+                    const result = minimax(newBoard, HU_PLAYER);
+                    move.score = result.score;
+                } else {
+                    const result = minimax(newBoard, AI_PLAYER);
+                    move.score = result.score;
+                }
+
+                newBoard[availSpots[i]] = '';
+                moves.push(move);
+            }
+
+            let bestMove;
+            if (player === AI_PLAYER) {
+                let bestScore = -10000;
+                for (let i = 0; i < moves.length; i++) {
+                    if (moves[i].score > bestScore) {
+                        bestScore = moves[i].score;
+                        bestMove = i;
+                    }
+                }
+            } else {
+                let bestScore = 10000;
+                for (let i = 0; i < moves.length; i++) {
+                    if (moves[i].score < bestScore) {
+                        bestScore = moves[i].score;
+                        bestMove = i;
+                    }
+                }
+            }
+            return moves[bestMove];
+        }
+
+        function checkWin(board, player) {
+            return winningConditions.some(combination => {
+                return combination.every(index => board[index] === player);
+            });
+        }
+    </script>
+</body>
+</html>
