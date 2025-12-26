@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>1132932-Finalterm</title>
+  <title>九路圍棋 - 打劫規則修正版</title>
   <style>
     :root {
         --bg-color: #2c3e50;
@@ -104,23 +104,17 @@
         box-shadow: 0 1px 1px rgba(255,255,255,0.4);
     }
 
-    /* === 下棋前的陰影效果 (Hover Shadow) === */
+    /* === 下棋前的陰影效果 === */
     #board.turn-black .cell:not(.has-stone):hover::after {
-        content: ''; position: absolute;
-        width: 40px; height: 40px;
-        background: rgba(0, 0, 0, 0.4);
-        border-radius: 50%;
-        top: 50%; left: 50%; transform: translate(-50%, -50%);
-        z-index: 5;
+        content: ''; position: absolute; width: 40px; height: 40px;
+        background: rgba(0, 0, 0, 0.4); border-radius: 50%;
+        top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
         box-shadow: 0 0 5px rgba(0,0,0,0.3);
     }
     #board.turn-white .cell:not(.has-stone):hover::after {
-        content: ''; position: absolute;
-        width: 40px; height: 40px;
-        background: rgba(255, 255, 255, 0.6);
-        border-radius: 50%;
-        top: 50%; left: 50%; transform: translate(-50%, -50%);
-        z-index: 5;
+        content: ''; position: absolute; width: 40px; height: 40px;
+        background: rgba(255, 255, 255, 0.6); border-radius: 50%;
+        top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 5;
         box-shadow: 0 0 5px rgba(255,255,255,0.3);
     }
 
@@ -298,11 +292,9 @@
         this.consecutivePasses = 0;
         this.aiEnabled = true;
         this.gameOver = false;
-        this.koPoint = null;
-        this.koForbid = 0;
+        this.koBan = null; // 打劫禁著點 {x, y}
         this.captureDelay = false;
         this.winHistory = { black: 0, white: 0 };
-        this.history = []; 
         
         this.popupEl = document.getElementById('atari-popup');
         this.containerEl = document.getElementById('game-container');
@@ -339,13 +331,11 @@
       newGame() {
         this.board = Array(9).fill().map(() => Array(9).fill(0));
         this.territoryMap = Array(9).fill().map(() => Array(9).fill(0));
-        this.captures = { 1: 0, 2: 0 }; // 修正：重置提子
+        this.captures = { 1: 0, 2: 0 }; // 重置提子
         this.currentPlayer = 1;
-        this.history = [];
         this.consecutivePasses = 0;
         this.gameOver = false;
-        this.koPoint = null;
-        this.koForbid = 0;
+        this.koBan = null;
         
         document.getElementById('passBtn').disabled = false;
         document.getElementById('passBtn').textContent = '讓子';
@@ -353,7 +343,7 @@
         this.closeResult();
         this.refreshBoardUI(); 
         this.updateStatus();
-        this.updateUI(); // 修正：更新提子 UI
+        this.updateUI(); // 更新提子 UI
       }
 
       handleClick(e) {
@@ -379,55 +369,68 @@
             }, delay);
           }
         } else {
+            // 如果是打劫禁點，震動提示更明顯
+            if (this.koBan && this.koBan.x === col && this.koBan.y === row) {
+                this.showMessage("打劫規則：禁止立即回提", "#e74c3c");
+            }
             this.containerEl.style.transform = "translateX(5px)";
             setTimeout(() => this.containerEl.style.transform = "none", 100);
         }
       }
 
       makeMove(row, col, player) {
-        if (this.koPoint) { this.koPoint = null; this.koForbid = 0; }
-        
         this.consecutivePasses = 0;
         document.getElementById('passBtn').textContent = '讓子';
         
+        // 1. 落子
         this.board[row][col] = player;
         this.renderStone(row, col, player);
         
+        // 2. 標記最後一手
         this.clearLastMoveMark();
         const cell = this.getCell(row, col);
         if(cell.firstChild && cell.firstChild.classList.contains('stone')) {
             cell.firstChild.classList.add('last-move');
         }
-        this.lastMove = { row, col };
-
+        
         const opponent = -player;
         const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-        let capturedCount = 0;
-        let koCandidate = null;
+        let capturedStones = []; // 收集被提子的座標 {r, c}
 
+        // 3. 檢查提子
         for (let [dr, dc] of dirs) {
           const r = row + dr, c = col + dc;
           if (this.isOnBoard(r, c) && this.board[r][c] === opponent) {
             if (!this.hasLiberties(this.board, r, c, opponent)) {
-              if(!koCandidate) koCandidate = {r, c};
-              capturedCount += this.removeGroup(r, c, opponent);
+              // 收集整塊死棋
+              const group = this.getGroup(r, c, opponent);
+              capturedStones.push(...group);
             }
           }
         }
 
-        // 更新提子數
-        this.captures[player === 1 ? 1 : 2] += capturedCount;
-
-        if (capturedCount === 1 && koCandidate) {
-           if (this.countLibertiesSimple(row, col, player) === 0) { 
-              this.koPoint = { r: koCandidate.r, c: koCandidate.c };
-              this.koForbid = opponent;
-           }
+        // 4. 執行提子
+        if (capturedStones.length > 0) {
+            this.removeStones(capturedStones);
+            this.captures[player === 1 ? 1 : 2] += capturedStones.length;
+            this.captureDelay = true;
         }
 
-        let currentHash = JSON.stringify(this.board);
-        this.history.push(currentHash);
+        // 5. 設定打劫禁著點 (Ko Ban)
+        // 條件：提吃正好 1 子，且下子後自己也剩 1 氣 (表示可以被反提)
+        this.koBan = null; // 先重置
+        if (capturedStones.length === 1) {
+            // 檢查剛下的這顆子是否剩 1 氣
+            const selfGroup = this.getGroup(row, col, player);
+            // 這裡要算該串棋子的氣數
+            const liberties = this.countLiberties(selfGroup);
+            if (liberties === 1) {
+                // 設定禁著點為剛剛被提掉的那個位置
+                this.koBan = { x: capturedStones[0].c, y: capturedStones[0].r };
+            }
+        }
 
+        // 6. 檢查是否叫吃 (Atari)
         let causedAtari = false;
         for (let [dr, dc] of dirs) {
             let nr = row + dr, nc = col + dc;
@@ -443,9 +446,61 @@
 
         this.currentPlayer = -player;
         this.updateStatus();
-        this.updateUI(); // 更新提子數
-        
-        if (capturedCount > 0) this.captureDelay = true;
+        this.updateUI(); 
+      }
+
+      // 取得整串棋子座標
+      getGroup(r, c, color) {
+          let group = [];
+          let queue = [{r, c}];
+          let visited = new Set([`${r},${c}`]);
+          while (queue.length > 0) {
+              let curr = queue.pop();
+              group.push(curr);
+              [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(([dx, dy]) => {
+                  let nx = curr.r + dx, ny = curr.c + dy;
+                  if (this.isOnBoard(nx, ny) && this.board[nx][ny] === color && !visited.has(`${nx},${ny}`)) {
+                      visited.add(`${nx},${ny}`);
+                      queue.push({r: nx, c: ny});
+                  }
+              });
+          }
+          return group;
+      }
+
+      // 移除棋子 (邏輯 + UI)
+      removeStones(stones) {
+          stones.forEach(s => {
+              this.board[s.r][s.c] = 0;
+              const cell = this.getCell(s.r, s.c);
+              cell.classList.add('captured');
+              cell.classList.remove('has-stone');
+              setTimeout(() => {
+                  cell.classList.remove('captured');
+                  const stone = cell.querySelector('.stone');
+                  if(stone) stone.remove();
+                  // 補回星位點
+                  if(cell.classList.contains('star') && !cell.querySelector('.star-dot')) {
+                      const dot = document.createElement('div');
+                      dot.className = 'star-dot';
+                      cell.appendChild(dot);
+                  }
+              }, 400);
+          });
+      }
+
+      // 計算一串棋子的氣數
+      countLiberties(group) {
+          let liberties = new Set();
+          group.forEach(stone => {
+              [[0, 1], [0, -1], [1, 0], [-1, 0]].forEach(([dx, dy]) => {
+                  let nx = stone.r + dx, ny = stone.c + dy;
+                  if (this.isOnBoard(nx, ny) && this.board[nx][ny] === 0) {
+                      liberties.add(`${nx},${ny}`);
+                  }
+              });
+          });
+          return liberties.size;
       }
 
       renderStone(r, c, player) {
@@ -474,63 +529,9 @@
           }
       }
 
-      removeGroup(r, c, color) {
-        let count = 0;
-        const stack = [{r, c}];
-        const visited = new Set([`${r},${c}`]);
-        while(stack.length > 0) {
-            const curr = stack.pop();
-            this.board[curr.r][curr.c] = 0; 
-            count++;
-            const cell = this.getCell(curr.r, curr.c);
-            cell.classList.add('captured');
-            cell.classList.remove('has-stone');
-            setTimeout(() => {
-                cell.classList.remove('captured');
-                const stone = cell.querySelector('.stone');
-                if(stone) stone.remove();
-                if(cell.classList.contains('star')) {
-                    if(!cell.querySelector('.star-dot')) {
-                        const dot = document.createElement('div');
-                        dot.className = 'star-dot';
-                        cell.appendChild(dot);
-                    }
-                }
-            }, 400);
-            [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                const nr = curr.r + dr, nc = curr.c + dc;
-                if(this.isOnBoard(nr, nc) && this.board[nr][nc] === color && !visited.has(`${nr},${nc}`)) {
-                    visited.add(`${nr},${nc}`);
-                    stack.push({r: nr, c: nc});
-                }
-            });
-        }
-        return count;
-      }
-
       checkIsAtari(r, c, color) {
-          return this.countGroupLiberties(r, c, color) === 1;
-      }
-
-      countGroupLiberties(r, c, color) {
-          const visited = new Set([`${r},${c}`]);
-          const stack = [{r, c}];
-          let libs = new Set();
-          while(stack.length > 0) {
-              const curr = stack.pop();
-              [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
-                  const nr = curr.r+dr, nc = curr.c+dc;
-                  if(this.isOnBoard(nr, nc)) {
-                      if(this.board[nr][nc] === 0) {
-                          libs.add(`${nr},${nc}`);
-                      } else if(this.board[nr][nc] === color && !visited.has(`${nr},${nc}`)) {
-                          visited.add(`${nr},${nc}`);
-                          stack.push({r: nr, c: nc});
-                      }
-                  }
-              });
-          }
-          return libs.size;
+          const group = this.getGroup(r, c, color);
+          return this.countLiberties(group) === 1;
       }
 
       triggerAtariEffect(who) {
@@ -550,6 +551,7 @@
         this.containerEl.classList.remove('atari-border');
       }
 
+      // === 輔助函式 ===
       getCell(r, c) { return document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`); }
       isOnBoard(r, c) { return r >= 0 && r < 9 && c >= 0 && c < 9; }
       
@@ -610,7 +612,11 @@
       
       isValidMoveForPlayer(row, col, player) {
         if (this.board[row][col] !== 0) return false;
-        if (this.koPoint && player === this.koForbid && row === this.koPoint.r && col === this.koPoint.c) return false;
+        
+        // 檢查打劫禁著點
+        if (this.koBan && this.koBan.x === col && this.koBan.y === row) {
+            return false;
+        }
         
         const tempBoard = this.board.map(r => [...r]);
         tempBoard[row][col] = player;
@@ -623,7 +629,9 @@
             if (!this.hasLiberties(tempBoard, nr, nc, opponent)) { canCapture = true; break; }
           }
         }
+        // 如果能吃子，則不是自殺 (即使自己沒氣)
         if (canCapture) return true;
+        // 否則必須自己有氣
         return this.hasLiberties(tempBoard, row, col, player);
       }
 
@@ -655,6 +663,7 @@
           return count; 
       }
 
+      // === 殺手 AI ===
       aiMove() {
         if (this.currentPlayer !== -1 || !this.aiEnabled || this.gameOver) return;
         const moves = [];
@@ -687,6 +696,7 @@
         }
       }
 
+      // === 結算邏輯 ===
       endGame(reason) {
         this.gameOver = true;
         document.getElementById('passBtn').disabled = true;
@@ -746,7 +756,6 @@
         document.getElementById('score-black-val').innerText = this.winHistory.black;
         document.getElementById('score-white-val').innerText = this.winHistory.white;
 
-        // 終局時顯示詳細資訊
         document.getElementById('black-caps').innerText = `子:${b} / 空:${b_terr}`;
         document.getElementById('white-caps').innerText = `子:${w} / 空:${w_terr}`;
 
@@ -768,10 +777,14 @@
         this.aiEnabled = !this.aiEnabled;
         document.getElementById('aiBtn').innerText = this.aiEnabled ? 'AI: 開' : 'AI: 關';
         
-        // 修正：如果AI被開啟，且輪到白棋，則觸發AI下棋
         if (this.aiEnabled && this.currentPlayer === -1 && !this.gameOver) {
             setTimeout(() => this.aiMove(), 500);
         }
+      }
+      
+      showMessage(msg, color) {
+          // 可選：用於顯示打劫錯誤的臨時訊息框 (這裡暫時 console.log 或 alert)
+          // console.log(msg);
       }
     }
 
