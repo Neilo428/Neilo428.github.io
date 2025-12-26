@@ -3,12 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>1132932_finalexam</title>
+  <title>1132932_FinalTerm</title>
   <style>
     :root {
         --bg-color: #2c3e50;
         --text-color: #ecf0f1;
         --accent-color: #f1c40f;
+        --error-color: #e74c3c;
     }
 
     body {
@@ -26,7 +27,7 @@
     }
 
     h1 {
-      margin: 0 0 10px 0;
+      margin: 0 0 5px 0;
       font-weight: 300;
       letter-spacing: 2px;
       text-shadow: 0 2px 4px rgba(0,0,0,0.5);
@@ -34,11 +35,11 @@
 
     /* === 1. 累計戰績板 === */
     #scoreboard {
-        display: flex; gap: 20px; margin-bottom: 10px; font-size: 1.1em; font-weight: bold;
+        display: flex; gap: 20px; margin-bottom: 5px; font-size: 1.1em; font-weight: bold;
     }
     .score-badge {
-        padding: 6px 18px; border-radius: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        display: flex; align-items: center; gap: 10px; transition: transform 0.2s;
+        padding: 5px 15px; border-radius: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        display: flex; align-items: center; gap: 8px; transition: transform 0.2s;
     }
     .score-black { background: linear-gradient(135deg, #444, #222); border: 1px solid #666; }
     .score-white { background: linear-gradient(135deg, #eee, #ccc); color: #333; border: 1px solid #999; }
@@ -49,6 +50,7 @@
         position: relative;
         perspective: 1000px;
         z-index: 10;
+        margin-bottom: 5px;
     }
 
     .game-container {
@@ -206,16 +208,29 @@
     /* === 底部資訊與按鈕 === */
     #info-panel {
         width: 460px; display: flex; justify-content: space-between;
-        margin: 10px 0; background: rgba(0,0,0,0.3); padding: 10px 15px;
+        margin: 5px 0; background: rgba(0,0,0,0.3); padding: 10px 15px;
         border-radius: 8px; box-sizing: border-box;
     }
     .player-info { display: flex; align-items: center; gap: 10px; font-weight: bold; }
     .capture-badge { background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 4px; font-family: monospace; color: #f1c40f; }
 
+    /* === 新增：錯誤訊息提示列 === */
+    #warning-msg {
+        height: 20px;
+        margin-top: 5px;
+        font-size: 0.95em;
+        color: var(--error-color);
+        font-weight: bold;
+        text-shadow: 0 1px 1px black;
+        opacity: 0;
+        transition: opacity 0.3s;
+    }
+    #warning-msg.show { opacity: 1; }
+
     #status {
         font-size: 1.3em; font-weight: bold;
         height: 35px; line-height: 35px;
-        margin: 10px 0; padding: 0 20px;
+        margin: 5px 0; padding: 0 20px;
         border-radius: 20px;
         transition: all 0.3s;
         background: #444; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
@@ -223,7 +238,7 @@
     #status.turn-black { background: #222; color: #f1c40f; border: 1px solid #555; }
     #status.turn-white { background: #eee; color: #2c3e50; border: 1px solid #ccc; }
 
-    .controls { display: flex; gap: 10px; margin-top: 15px; }
+    .controls { display: flex; gap: 10px; margin-top: 10px; }
     button {
         background: linear-gradient(to bottom, #3498db, #2980b9);
         color: white; border: none; padding: 10px 20px;
@@ -263,6 +278,8 @@
       </div>
   </div>
 
+  <div id="warning-msg"></div>
+
   <div id="info-panel">
     <div class="player-info">
         <span style="color:#222; background:#aaa; padding:2px 6px; border-radius:4px;">● 黑棋</span>
@@ -301,6 +318,7 @@
         this.boardEl = document.getElementById('board');
         this.modalEl = document.getElementById('result-modal');
         this.statusEl = document.getElementById('status');
+        this.warningEl = document.getElementById('warning-msg'); // 取得警告訊息元素
 
         this.initBoard();
         this.updateStatus();
@@ -340,6 +358,7 @@
         document.getElementById('passBtn').disabled = false;
         document.getElementById('passBtn').textContent = '讓子';
         this.clearAtariEffect();
+        this.hideWarning(); // 清除警告
         this.closeResult();
         this.refreshBoardUI(); 
         this.updateStatus();
@@ -358,6 +377,9 @@
         const row = parseInt(target.dataset.row);
         const col = parseInt(target.dataset.col);
         
+        // 點擊後先隱藏舊警告
+        this.hideWarning();
+
         if (this.isValidMove(row, col)) {
           this.makeMove(row, col, this.currentPlayer); 
           
@@ -369,13 +391,61 @@
             }, delay);
           }
         } else {
-            // 如果是打劫禁點，震動提示更明顯
-            if (this.koBan && this.koBan.x === col && this.koBan.y === row) {
-                this.showMessage("打劫規則：禁止立即回提", "#e74c3c");
-            }
+            // 如果這一步是無效的，顯示原因
+            this.showInvalidReason(row, col, this.currentPlayer);
+
+            // 震動效果
             this.containerEl.style.transform = "translateX(5px)";
             setTimeout(() => this.containerEl.style.transform = "none", 100);
         }
+      }
+
+      // 專門用來判斷並顯示禁著點原因
+      showInvalidReason(r, c, player) {
+          if (this.board[r][c] !== 0) return; // 已經有子了，不需要特別提示
+
+          // 1. 檢查打劫 (Ko)
+          if (this.koBan && this.koBan.x === c && this.koBan.y === r) {
+              this.showWarning("⚠️ 打劫規則：禁止立即回提 (Ko)");
+              return;
+          }
+
+          // 2. 檢查自殺 (Suicide)
+          const tempBoard = this.board.map(row => [...row]);
+          tempBoard[r][c] = player;
+          const opponent = -player;
+          let canCapture = false;
+          const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+          
+          for (let [dr, dc] of dirs) {
+            const nr = r + dr, nc = c + dc;
+            if (this.isOnBoard(nr, nc) && tempBoard[nr][nc] === opponent) {
+              if (!this.hasLiberties(tempBoard, nr, nc, opponent)) { 
+                  canCapture = true; 
+                  break; 
+              }
+            }
+          }
+
+          // 如果不能吃子，且自己也沒有氣，就是禁著點(自殺)
+          if (!canCapture && !this.hasLiberties(tempBoard, r, c, player)) {
+              this.showWarning("⚠️ 禁著點：禁止自殺 (無氣)");
+          }
+      }
+
+      // 顯示警告文字
+      showWarning(text) {
+          this.warningEl.innerText = text;
+          this.warningEl.classList.add('show');
+          // 2.5秒後自動消失
+          if(this.warnTimeout) clearTimeout(this.warnTimeout);
+          this.warnTimeout = setTimeout(() => {
+              this.hideWarning();
+          }, 2500);
+      }
+
+      hideWarning() {
+          this.warningEl.classList.remove('show');
       }
 
       makeMove(row, col, player) {
@@ -417,12 +487,10 @@
         }
 
         // 5. 設定打劫禁著點 (Ko Ban)
-        // 條件：提吃正好 1 子，且下子後自己也剩 1 氣 (表示可以被反提)
         this.koBan = null; // 先重置
         if (capturedStones.length === 1) {
             // 檢查剛下的這顆子是否剩 1 氣
             const selfGroup = this.getGroup(row, col, player);
-            // 這裡要算該串棋子的氣數
             const liberties = this.countLiberties(selfGroup);
             if (liberties === 1) {
                 // 設定禁著點為剛剛被提掉的那個位置
@@ -654,15 +722,6 @@
         return false;
       }
 
-      countLibertiesSimple(r, c, player) {
-          let count = 0;
-          [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc])=>{
-              let nr=r+dr, nc=c+dc;
-              if(this.isOnBoard(nr,nc) && this.board[nr][nc]===0) count++;
-          });
-          return count; 
-      }
-
       // === 殺手 AI ===
       aiMove() {
         if (this.currentPlayer !== -1 || !this.aiEnabled || this.gameOver) return;
@@ -781,11 +840,6 @@
             setTimeout(() => this.aiMove(), 500);
         }
       }
-      
-      showMessage(msg, color) {
-          // 可選：用於顯示打劫錯誤的臨時訊息框 (這裡暫時 console.log 或 alert)
-          // console.log(msg);
-      }
     }
 
     const game = new NineBoardGo();
@@ -793,4 +847,3 @@
   </script>
 </body>
 </html>
-
