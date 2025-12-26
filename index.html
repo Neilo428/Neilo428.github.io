@@ -1,15 +1,782 @@
 <!DOCTYPE html>
-<html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <title>Title</title>
-        <link rel="stylesheet" href="styles.css" />
-        <script src="script.js"></script>
-    </head>
-    <body>
-        <h1 class="title">Hello World</h1>
-        <div id="mainDiv">Hello Div</div>
-        <br />
-        <button onclick="buttonClicked()">Click me</button>
-    </body>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>1132932-Finalterm</title>
+  <style>
+    :root {
+        --bg-color: #2c3e50;
+        --text-color: #ecf0f1;
+        --accent-color: #f1c40f;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      user-select: none;
+      overflow: hidden;
+    }
+
+    h1 {
+      margin: 0 0 10px 0;
+      font-weight: 300;
+      letter-spacing: 2px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    }
+
+    /* === 1. 累計戰績板 === */
+    #scoreboard {
+        display: flex; gap: 20px; margin-bottom: 10px; font-size: 1.1em; font-weight: bold;
+    }
+    .score-badge {
+        padding: 6px 18px; border-radius: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        display: flex; align-items: center; gap: 10px; transition: transform 0.2s;
+    }
+    .score-black { background: linear-gradient(135deg, #444, #222); border: 1px solid #666; }
+    .score-white { background: linear-gradient(135deg, #eee, #ccc); color: #333; border: 1px solid #999; }
+    .win-count { font-size: 1.4em; color: var(--accent-color); text-shadow: 0 1px 1px rgba(0,0,0,0.8); }
+
+    /* === 2. 遊戲容器 (3D 透視) === */
+    #game-wrapper {
+        position: relative;
+        perspective: 1000px;
+        z-index: 10;
+    }
+
+    .game-container {
+      position: relative;
+      text-align: center;
+      background: #4e342e;
+      padding: 10px;
+      border-radius: 8px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+      transition: transform 0.1s;
+    }
+
+    /* === 3. 棋盤 Grid === */
+    #board {
+      position: relative;
+      width: 450px; height: 450px;
+      display: grid;
+      grid-template-columns: repeat(9, 50px);
+      grid-template-rows: repeat(9, 50px);
+      gap: 0;
+      background-color: #e3c081;
+      background-image: 
+        linear-gradient(rgba(0,0,0,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,0,0,0.05) 1px, transparent 1px),
+        url('https://www.transparenttextures.com/patterns/wood-pattern.png');
+      background-size: 50px 50px, 50px 50px, auto;
+      border-radius: 4px;
+      box-shadow: inset 0 0 20px rgba(60, 30, 0, 0.3);
+    }
+
+    .cell {
+      width: 50px; height: 50px;
+      position: relative;
+      cursor: pointer;
+      display: flex; justify-content: center; align-items: center;
+    }
+    /* 格線 */
+    .cell::before {
+      content: ''; position: absolute; top: 50%; left: 0; width: 100%; height: 2px;
+      background: #402000; transform: translateY(-50%); z-index: 0;
+    }
+    .cell::after {
+      content: ''; position: absolute; top: 0; left: 50%; height: 100%; width: 2px;
+      background: #402000; transform: translateX(-50%); z-index: 0;
+    }
+    .cell[data-col="0"]::before { left: 50%; width: 50%; }
+    .cell[data-col="8"]::before { width: 50%; }
+    .cell[data-row="0"]::after { top: 50%; height: 50%; }
+    .cell[data-row="8"]::after { height: 50%; }
+
+    .cell.star .star-dot {
+        position: absolute; width: 8px; height: 8px; background: #000; border-radius: 50%; z-index: 1;
+        box-shadow: 0 1px 1px rgba(255,255,255,0.4);
+    }
+
+    /* === 下棋前的陰影效果 (Hover Shadow) === */
+    #board.turn-black .cell:not(.has-stone):hover::after {
+        content: ''; position: absolute;
+        width: 40px; height: 40px;
+        background: rgba(0, 0, 0, 0.4);
+        border-radius: 50%;
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+        z-index: 5;
+        box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    }
+    #board.turn-white .cell:not(.has-stone):hover::after {
+        content: ''; position: absolute;
+        width: 40px; height: 40px;
+        background: rgba(255, 255, 255, 0.6);
+        border-radius: 50%;
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+        z-index: 5;
+        box-shadow: 0 0 5px rgba(255,255,255,0.3);
+    }
+
+    /* === 棋子 === */
+    .stone {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      position: relative;
+      z-index: 10;
+      box-shadow: 2px 3px 5px rgba(0,0,0,0.4);
+      transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .stone.black { background: radial-gradient(circle at 35% 35%, #666 0%, #111 100%); }
+    .stone.white { background: radial-gradient(circle at 35% 35%, #fff 0%, #ddd 100%); }
+    
+    .stone.last-move::after {
+      content: ''; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 40%; height: 40%;
+      border: 2px solid #e74c3c; border-radius: 50%;
+      box-shadow: 0 0 4px #e74c3c;
+    }
+
+    /* 吃子動畫 */
+    .captured .stone { animation: captureAnim 0.4s forwards; }
+    @keyframes captureAnim {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.5; }
+      100% { transform: scale(0); opacity: 0; }
+    }
+
+    /* === 領地標記 === */
+    .territory-mark {
+        position: absolute; width: 14px; height: 14px;
+        top: 50%; left: 50%; transform: translate(-50%, -50%);
+        z-index: 2;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    }
+    .territory-black { background-color: #000; }
+    .territory-white { background-color: #fff; border: 1px solid #ccc; }
+
+    /* === 特效與警告 === */
+    #atari-popup {
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%) scale(0) rotateX(90deg);
+        background: radial-gradient(circle, #e74c3c, #c0392b);
+        color: white; padding: 15px 40px; font-size: 2.5em; font-weight: 900;
+        border-radius: 15px; border: 3px solid #fff; z-index: 100;
+        box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+        opacity: 0; pointer-events: none;
+        transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        white-space: nowrap; text-shadow: 2px 2px 0 rgba(0,0,0,0.3);
+    }
+    #atari-popup.show { transform: translate(-50%, -50%) scale(1) rotateX(0deg); opacity: 1; }
+
+    .shake-effect { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; }
+    @keyframes shake {
+        10%, 90% { transform: translate3d(-2px, 0, 0); }
+        20%, 80% { transform: translate3d(4px, 0, 0); }
+        30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+        40%, 60% { transform: translate3d(6px, 0, 0); }
+    }
+    .atari-border { animation: flash-border 0.8s infinite alternate; }
+    @keyframes flash-border {
+        from { box-shadow: 0 0 0 5px rgba(231, 76, 60, 0); }
+        to { box-shadow: 0 0 0 15px rgba(231, 76, 60, 0.8); }
+    }
+
+    /* === 結算視窗 === */
+    #result-modal {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85); display: flex; flex-direction: column;
+        align-items: center; justify-content: center; z-index: 200;
+        opacity: 0; pointer-events: none; transition: opacity 0.3s; backdrop-filter: blur(4px);
+    }
+    #result-modal.active { opacity: 1; pointer-events: auto; }
+    .result-content {
+        background: #34495e; border: 2px solid #f1c40f; padding: 25px;
+        border-radius: 12px; text-align: center; color: #fff;
+        box-shadow: 0 0 30px rgba(241, 196, 15, 0.3); min-width: 300px;
+    }
+    .calc-row {
+        display: flex; justify-content: space-between; margin: 10px 0;
+        border-bottom: 1px dashed #7f8c8d; padding-bottom: 5px; font-family: monospace; font-size: 1.1em;
+    }
+    .total-row { font-size: 1.4em; font-weight: bold; margin-top: 15px; color: #f1c40f; }
+    .btn-close { margin-top: 20px; background: #e74c3c !important; }
+
+    /* === 底部資訊與按鈕 === */
+    #info-panel {
+        width: 460px; display: flex; justify-content: space-between;
+        margin: 10px 0; background: rgba(0,0,0,0.3); padding: 10px 15px;
+        border-radius: 8px; box-sizing: border-box;
+    }
+    .player-info { display: flex; align-items: center; gap: 10px; font-weight: bold; }
+    .capture-badge { background: rgba(0,0,0,0.5); padding: 2px 8px; border-radius: 4px; font-family: monospace; color: #f1c40f; }
+
+    #status {
+        font-size: 1.3em; font-weight: bold;
+        height: 35px; line-height: 35px;
+        margin: 10px 0; padding: 0 20px;
+        border-radius: 20px;
+        transition: all 0.3s;
+        background: #444; color: #fff; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    }
+    #status.turn-black { background: #222; color: #f1c40f; border: 1px solid #555; }
+    #status.turn-white { background: #eee; color: #2c3e50; border: 1px solid #ccc; }
+
+    .controls { display: flex; gap: 10px; margin-top: 15px; }
+    button {
+        background: linear-gradient(to bottom, #3498db, #2980b9);
+        color: white; border: none; padding: 10px 20px;
+        border-radius: 6px; font-size: 16px; font-weight: bold;
+        cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 0 #1f618d;
+    }
+    button:active { transform: translateY(2px); box-shadow: 0 2px 0 #1f618d; }
+    button:disabled { background: #95a5a6; box-shadow: none; cursor: not-allowed; opacity: 0.7; }
+    .pass-btn { background: linear-gradient(to bottom, #e67e22, #d35400); box-shadow: 0 4px 0 #a04000; }
+    .pass-btn:active { box-shadow: 0 2px 0 #a04000; }
+  </style>
+</head>
+<body>
+
+  <h1>九路圍棋</h1>
+
+  <div id="scoreboard">
+      <div class="score-badge score-black">
+          ● 黑勝 <span class="win-count" id="score-black-val">0</span>
+      </div>
+      <div class="score-badge score-white">
+          ○ 白勝 <span class="win-count" id="score-white-val">0</span>
+      </div>
+  </div>
+
+  <div id="game-wrapper">
+      <div id="atari-popup">⚠️ 叫吃！</div>
+      <div id="result-modal">
+          <div class="result-content">
+              <h2 style="margin:0 0 15px 0; color:#f1c40f;">🏆 終局計算</h2>
+              <div id="calc-details"></div>
+              <button class="btn-close" onclick="game.closeResult()">關閉</button>
+          </div>
+      </div>
+      <div class="game-container" id="game-container">
+        <div id="board"></div>
+      </div>
+  </div>
+
+  <div id="info-panel">
+    <div class="player-info">
+        <span style="color:#222; background:#aaa; padding:2px 6px; border-radius:4px;">● 黑棋</span>
+        <span class="capture-badge" id="black-caps">提子: 0</span>
+    </div>
+    <div class="player-info">
+        <span style="color:#eee; background:#555; padding:2px 6px; border-radius:4px;">○ 白棋</span>
+        <span class="capture-badge" id="white-caps">提子: 0</span>
+    </div>
+  </div>
+
+  <div id="status" class="turn-black">🖤 黑棋先手，請點擊棋盤下子</div>
+
+  <div class="controls">
+    <button onclick="game.newGame()">新局</button>
+    <button class="pass-btn" onclick="game.pass()" id="passBtn">讓子</button>
+    <button onclick="game.toggleAI()" id="aiBtn">AI: 開</button>
+  </div>
+
+  <script>
+    class NineBoardGo {
+      constructor() {
+        this.board = Array(9).fill().map(() => Array(9).fill(0));
+        this.territoryMap = Array(9).fill().map(() => Array(9).fill(0)); 
+        this.captures = { 1: 0, 2: 0 };
+        this.currentPlayer = 1;  // 1 = 黑，-1 = 白
+        this.consecutivePasses = 0;
+        this.aiEnabled = true;
+        this.gameOver = false;
+        this.koPoint = null;
+        this.koForbid = 0;
+        this.captureDelay = false;
+        this.winHistory = { black: 0, white: 0 };
+        this.history = []; 
+        
+        this.popupEl = document.getElementById('atari-popup');
+        this.containerEl = document.getElementById('game-container');
+        this.boardEl = document.getElementById('board');
+        this.modalEl = document.getElementById('result-modal');
+        this.statusEl = document.getElementById('status');
+
+        this.initBoard();
+        this.updateStatus();
+      }
+
+      initBoard() {
+        this.boardEl.innerHTML = '';
+        for (let i = 0; i < 81; i++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          const r = Math.floor(i / 9), c = i % 9;
+          cell.dataset.row = r;
+          cell.dataset.col = c;
+          
+          if ((r === 2 && c === 2) || (r === 2 && c === 6) || 
+              (r === 6 && c === 2) || (r === 6 && c === 6) || 
+              (r === 4 && c === 4)) {
+            cell.classList.add('star');
+            const dot = document.createElement('div');
+            dot.className = 'star-dot';
+            cell.appendChild(dot);
+          }
+          cell.addEventListener('click', (e) => this.handleClick(e));
+          this.boardEl.appendChild(cell);
+        }
+      }
+
+      newGame() {
+        this.board = Array(9).fill().map(() => Array(9).fill(0));
+        this.territoryMap = Array(9).fill().map(() => Array(9).fill(0));
+        this.captures = { 1: 0, 2: 0 }; // 修正：重置提子
+        this.currentPlayer = 1;
+        this.history = [];
+        this.consecutivePasses = 0;
+        this.gameOver = false;
+        this.koPoint = null;
+        this.koForbid = 0;
+        
+        document.getElementById('passBtn').disabled = false;
+        document.getElementById('passBtn').textContent = '讓子';
+        this.clearAtariEffect();
+        this.closeResult();
+        this.refreshBoardUI(); 
+        this.updateStatus();
+        this.updateUI(); // 修正：更新提子 UI
+      }
+
+      handleClick(e) {
+        let target = e.target;
+        if(target.classList.contains('stone') || target.classList.contains('star-dot') || target.classList.contains('territory-mark')) {
+            target = target.parentElement;
+        }
+        
+        if (this.gameOver) return;
+        if (this.aiEnabled && this.currentPlayer !== 1) return;
+
+        const row = parseInt(target.dataset.row);
+        const col = parseInt(target.dataset.col);
+        
+        if (this.isValidMove(row, col)) {
+          this.makeMove(row, col, this.currentPlayer); 
+          
+          if (this.aiEnabled && !this.gameOver) {
+            const delay = this.captureDelay ? 800 : 400;
+            setTimeout(() => { 
+              this.captureDelay = false;
+              this.aiMove(); 
+            }, delay);
+          }
+        } else {
+            this.containerEl.style.transform = "translateX(5px)";
+            setTimeout(() => this.containerEl.style.transform = "none", 100);
+        }
+      }
+
+      makeMove(row, col, player) {
+        if (this.koPoint) { this.koPoint = null; this.koForbid = 0; }
+        
+        this.consecutivePasses = 0;
+        document.getElementById('passBtn').textContent = '讓子';
+        
+        this.board[row][col] = player;
+        this.renderStone(row, col, player);
+        
+        this.clearLastMoveMark();
+        const cell = this.getCell(row, col);
+        if(cell.firstChild && cell.firstChild.classList.contains('stone')) {
+            cell.firstChild.classList.add('last-move');
+        }
+        this.lastMove = { row, col };
+
+        const opponent = -player;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        let capturedCount = 0;
+        let koCandidate = null;
+
+        for (let [dr, dc] of dirs) {
+          const r = row + dr, c = col + dc;
+          if (this.isOnBoard(r, c) && this.board[r][c] === opponent) {
+            if (!this.hasLiberties(this.board, r, c, opponent)) {
+              if(!koCandidate) koCandidate = {r, c};
+              capturedCount += this.removeGroup(r, c, opponent);
+            }
+          }
+        }
+
+        // 更新提子數
+        this.captures[player === 1 ? 1 : 2] += capturedCount;
+
+        if (capturedCount === 1 && koCandidate) {
+           if (this.countLibertiesSimple(row, col, player) === 0) { 
+              this.koPoint = { r: koCandidate.r, c: koCandidate.c };
+              this.koForbid = opponent;
+           }
+        }
+
+        let currentHash = JSON.stringify(this.board);
+        this.history.push(currentHash);
+
+        let causedAtari = false;
+        for (let [dr, dc] of dirs) {
+            let nr = row + dr, nc = col + dc;
+            if(this.isOnBoard(nr, nc) && this.board[nr][nc] === opponent) {
+                if(this.checkIsAtari(nr, nc, opponent)) {
+                    causedAtari = true; break; 
+                }
+            }
+        }
+
+        if(causedAtari) this.triggerAtariEffect(player);
+        else this.clearAtariEffect();
+
+        this.currentPlayer = -player;
+        this.updateStatus();
+        this.updateUI(); // 更新提子數
+        
+        if (capturedCount > 0) this.captureDelay = true;
+      }
+
+      renderStone(r, c, player) {
+        const cell = this.getCell(r, c);
+        const oldStone = cell.querySelector('.stone');
+        if(oldStone) oldStone.remove();
+        const stone = document.createElement('div');
+        stone.className = `stone ${player === 1 ? 'black' : 'white'}`;
+        cell.appendChild(stone);
+        cell.classList.add('has-stone'); 
+      }
+
+      renderTerritoryMarks() {
+          for(let r=0; r<9; r++) {
+              for(let c=0; c<9; c++) {
+                  const owner = this.territoryMap[r][c];
+                  if(owner !== 0 && this.board[r][c] === 0) {
+                      const cell = this.getCell(r, c);
+                      if(!cell.querySelector('.territory-mark')) {
+                          const mark = document.createElement('div');
+                          mark.className = `territory-mark ${owner === 1 ? 'territory-black' : 'territory-white'}`;
+                          cell.appendChild(mark);
+                      }
+                  }
+              }
+          }
+      }
+
+      removeGroup(r, c, color) {
+        let count = 0;
+        const stack = [{r, c}];
+        const visited = new Set([`${r},${c}`]);
+        while(stack.length > 0) {
+            const curr = stack.pop();
+            this.board[curr.r][curr.c] = 0; 
+            count++;
+            const cell = this.getCell(curr.r, curr.c);
+            cell.classList.add('captured');
+            cell.classList.remove('has-stone');
+            setTimeout(() => {
+                cell.classList.remove('captured');
+                const stone = cell.querySelector('.stone');
+                if(stone) stone.remove();
+                if(cell.classList.contains('star')) {
+                    if(!cell.querySelector('.star-dot')) {
+                        const dot = document.createElement('div');
+                        dot.className = 'star-dot';
+                        cell.appendChild(dot);
+                    }
+                }
+            }, 400);
+            [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
+                const nr = curr.r + dr, nc = curr.c + dc;
+                if(this.isOnBoard(nr, nc) && this.board[nr][nc] === color && !visited.has(`${nr},${nc}`)) {
+                    visited.add(`${nr},${nc}`);
+                    stack.push({r: nr, c: nc});
+                }
+            });
+        }
+        return count;
+      }
+
+      checkIsAtari(r, c, color) {
+          return this.countGroupLiberties(r, c, color) === 1;
+      }
+
+      countGroupLiberties(r, c, color) {
+          const visited = new Set([`${r},${c}`]);
+          const stack = [{r, c}];
+          let libs = new Set();
+          while(stack.length > 0) {
+              const curr = stack.pop();
+              [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr, dc]) => {
+                  const nr = curr.r+dr, nc = curr.c+dc;
+                  if(this.isOnBoard(nr, nc)) {
+                      if(this.board[nr][nc] === 0) {
+                          libs.add(`${nr},${nc}`);
+                      } else if(this.board[nr][nc] === color && !visited.has(`${nr},${nc}`)) {
+                          visited.add(`${nr},${nc}`);
+                          stack.push({r: nr, c: nc});
+                      }
+                  }
+              });
+          }
+          return libs.size;
+      }
+
+      triggerAtariEffect(who) {
+        let text = who === 1 ? "⚠️ 危險！" : "🔥 叫吃！";
+        this.popupEl.innerText = text;
+        this.popupEl.classList.add('show');
+        this.containerEl.classList.add('shake-effect');
+        this.containerEl.classList.add('atari-border');
+        setTimeout(() => {
+            this.popupEl.classList.remove('show');
+            this.containerEl.classList.remove('shake-effect');
+        }, 1200);
+      }
+
+      clearAtariEffect() {
+        this.popupEl.classList.remove('show');
+        this.containerEl.classList.remove('atari-border');
+      }
+
+      getCell(r, c) { return document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`); }
+      isOnBoard(r, c) { return r >= 0 && r < 9 && c >= 0 && c < 9; }
+      
+      clearLastMoveMark() {
+          const last = document.querySelector('.last-move');
+          if(last) last.classList.remove('last-move');
+      }
+      
+      refreshBoardUI() {
+          for(let r=0; r<9; r++) {
+              for(let c=0; c<9; c++) {
+                  const cell = this.getCell(r, c);
+                  const stone = cell.querySelector('.stone');
+                  if(stone) stone.remove();
+                  cell.classList.remove('has-stone');
+                  
+                  const mark = cell.querySelector('.territory-mark');
+                  if(mark) mark.remove();
+
+                  if(this.board[r][c] !== 0) this.renderStone(r, c, this.board[r][c]);
+              }
+          }
+      }
+
+      updateStatus() {
+        if (this.gameOver) return;
+        const name = this.currentPlayer === 1 ? '🖤 黑棋 (玩家)' : '⚪ 白棋 (電腦)';
+        this.statusEl.innerText = `${name} 下棋中...`;
+        this.statusEl.className = this.currentPlayer === 1 ? 'turn-black' : 'turn-white';
+        
+        if(this.currentPlayer === 1) {
+            this.boardEl.classList.add('turn-black');
+            this.boardEl.classList.remove('turn-white');
+        } else {
+            this.boardEl.classList.add('turn-white');
+            this.boardEl.classList.remove('turn-black');
+        }
+      }
+
+      updateUI() {
+        document.getElementById('black-caps').innerText = `提子: ${this.captures[1]}`;
+        document.getElementById('white-caps').innerText = `提子: ${this.captures[2]}`;
+      }
+
+      pass() {
+        this.consecutivePasses++;
+        document.getElementById('passBtn').textContent = `讓子 (${this.consecutivePasses}/2)`;
+        if (this.consecutivePasses >= 2) {
+          this.endGame('雙方連續讓子');
+          return;
+        }
+        this.currentPlayer = -this.currentPlayer;
+        this.updateStatus();
+        if (this.aiEnabled && this.currentPlayer === -1) setTimeout(() => this.aiMove(), 500);
+      }
+
+      isValidMove(row, col) { return this.isValidMoveForPlayer(row, col, this.currentPlayer); }
+      
+      isValidMoveForPlayer(row, col, player) {
+        if (this.board[row][col] !== 0) return false;
+        if (this.koPoint && player === this.koForbid && row === this.koPoint.r && col === this.koPoint.c) return false;
+        
+        const tempBoard = this.board.map(r => [...r]);
+        tempBoard[row][col] = player;
+        const opponent = -player;
+        let canCapture = false;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (let [dr, dc] of dirs) {
+          const nr = row + dr, nc = col + dc;
+          if (this.isOnBoard(nr, nc) && tempBoard[nr][nc] === opponent) {
+            if (!this.hasLiberties(tempBoard, nr, nc, opponent)) { canCapture = true; break; }
+          }
+        }
+        if (canCapture) return true;
+        return this.hasLiberties(tempBoard, row, col, player);
+      }
+
+      hasLiberties(board, row, col, player) {
+        const visited = Array(9).fill().map(() => Array(9).fill(false));
+        return this.dfsLiberties(board, row, col, player, visited);
+      }
+
+      dfsLiberties(board, r, c, player, visited) {
+        if (!this.isOnBoard(r, c) || visited[r][c] || board[r][c] !== player) return false;
+        visited[r][c] = true;
+        const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+        for (let [dr, dc] of dirs) {
+          const nr = r + dr, nc = c + dc;
+          if (this.isOnBoard(nr, nc) && board[nr][nc] === 0) return true;
+        }
+        for (let [dr, dc] of dirs) {
+          if (this.dfsLiberties(board, r + dr, c + dc, player, visited)) return true;
+        }
+        return false;
+      }
+
+      countLibertiesSimple(r, c, player) {
+          let count = 0;
+          [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc])=>{
+              let nr=r+dr, nc=c+dc;
+              if(this.isOnBoard(nr,nc) && this.board[nr][nc]===0) count++;
+          });
+          return count; 
+      }
+
+      aiMove() {
+        if (this.currentPlayer !== -1 || !this.aiEnabled || this.gameOver) return;
+        const moves = [];
+        for (let r = 0; r < 9; r++) {
+          for (let c = 0; c < 9; c++) {
+            if (this.isValidMoveForPlayer(r, c, -1)) {
+              let score = Math.random(); 
+              if((r===4 && c===4)) score += 5;
+              if([2,6].includes(r) && [2,6].includes(c)) score += 3;
+              
+              const tempBoard = this.board.map(row => [...row]);
+              tempBoard[r][c] = -1;
+              let captureBonus = 0;
+              [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc]) => {
+                  let nr=r+dr, nc=c+dc;
+                  if(this.isOnBoard(nr,nc) && tempBoard[nr][nc]===1 && !this.hasLiberties(tempBoard,nr,nc,1)) {
+                      captureBonus = 10000; 
+                  }
+              });
+              score += captureBonus;
+              moves.push({ r, c, score });
+            }
+          }
+        }
+        if (moves.length > 0) {
+          moves.sort((a, b) => b.score - a.score);
+          this.makeMove(moves[0].r, moves[0].c, -1);
+        } else {
+          this.pass();
+        }
+      }
+
+      endGame(reason) {
+        this.gameOver = true;
+        document.getElementById('passBtn').disabled = true;
+        
+        let b = 0, w = 0, b_terr = 0, w_terr = 0;
+        let visited = new Set();
+        
+        this.territoryMap = Array(9).fill().map(() => Array(9).fill(0));
+
+        this.board.forEach(row => row.forEach(val => { if(val===1) b++; else if(val===-1) w++; }));
+
+        for(let r=0; r<9; r++) {
+            for(let c=0; c<9; c++) {
+                if(this.board[r][c]===0 && !visited.has(`${r},${c}`)) {
+                    let region = [], owners = new Set();
+                    let stack = [{r,c}];
+                    visited.add(`${r},${c}`);
+                    while(stack.length) {
+                        let curr = stack.pop();
+                        region.push(curr);
+                        [[0,1],[0,-1],[1,0],[-1,0]].forEach(([dr,dc]) => {
+                            let nr=curr.r+dr, nc=curr.c+dc;
+                            if(this.isOnBoard(nr,nc)) {
+                                if(this.board[nr][nc]===0 && !visited.has(`${nr},${nc}`)) {
+                                    visited.add(`${nr},${nc}`);
+                                    stack.push({r: nr, c: nc});
+                                } else if(this.board[nr][nc]!==0) {
+                                    owners.add(this.board[nr][nc]);
+                                }
+                            }
+                        });
+                    }
+                    if(owners.size===1) {
+                        let owner = 0;
+                        if(owners.has(1)) {
+                            b_terr += region.length;
+                            owner = 1;
+                        } else {
+                            w_terr += region.length;
+                            owner = -1;
+                        }
+                        region.forEach(pos => this.territoryMap[pos.r][pos.c] = owner);
+                    }
+                }
+            }
+        }
+
+        this.renderTerritoryMarks();
+
+        const komi = 5.5;
+        const b_total = b + b_terr;
+        const w_total = w + w_terr + komi;
+        const winner = b_total > w_total ? "黑棋勝" : "白棋勝";
+        const diff = Math.abs(b_total - w_total);
+
+        if(b_total > w_total) this.winHistory.black++; else this.winHistory.white++;
+        document.getElementById('score-black-val').innerText = this.winHistory.black;
+        document.getElementById('score-white-val').innerText = this.winHistory.white;
+
+        // 終局時顯示詳細資訊
+        document.getElementById('black-caps').innerText = `子:${b} / 空:${b_terr}`;
+        document.getElementById('white-caps').innerText = `子:${w} / 空:${w_terr}`;
+
+        const html = `
+            <div class="calc-row"><span>● 黑棋</span><span>${b}(子) + ${b_terr}(空) = ${b_total}</span></div>
+            <div class="calc-row"><span>○ 白棋</span><span>${w}(子) + ${w_terr}(空) + ${komi}(貼) = ${w_total}</span></div>
+            <div class="total-row">${winner} (${diff}目)</div>
+            <div style="font-size:0.9em; color:#bbb; margin-top:5px;">(${reason})</div>
+        `;
+        document.getElementById('calc-details').innerHTML = html;
+        this.modalEl.classList.add('active');
+        this.statusEl.innerText = "遊戲結束";
+        this.statusEl.style.background = "#e74c3c";
+        this.statusEl.style.color = "#fff";
+      }
+
+      closeResult() { this.modalEl.classList.remove('active'); }
+      toggleAI() {
+        this.aiEnabled = !this.aiEnabled;
+        document.getElementById('aiBtn').innerText = this.aiEnabled ? 'AI: 開' : 'AI: 關';
+        
+        // 修正：如果AI被開啟，且輪到白棋，則觸發AI下棋
+        if (this.aiEnabled && this.currentPlayer === -1 && !this.gameOver) {
+            setTimeout(() => this.aiMove(), 500);
+        }
+      }
+    }
+
+    const game = new NineBoardGo();
+    game.newGame = game.newGame.bind(game);
+  </script>
+</body>
 </html>
